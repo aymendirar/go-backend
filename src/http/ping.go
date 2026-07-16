@@ -23,7 +23,7 @@ func (s *HTTPServer) PingRequest() gin.HandlerFunc {
 		}
 
 		if request.Ping != "pong" {
-			c.JSON(http.StatusBadRequest, PingResponse{Response: "incorrect field"})
+			c.JSON(http.StatusBadRequest, PingResponse{Response: "incorrect structure"})
 			return
 		}
 

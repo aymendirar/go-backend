@@ -2,10 +2,13 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/errgroup"
 )
 
 type HTTPServer struct {
@@ -13,12 +16,10 @@ type HTTPServer struct {
 	router *gin.Engine
 }
 
-const ADDRESS string = ":8000"
-
-func NewHTTPServer() *HTTPServer {
+func NewHTTPServer(host, port string) *HTTPServer {
 	router := gin.Default()
 	server := &http.Server{
-		Addr:    ADDRESS,
+		Addr:    fmt.Sprintf("%s:%s", host, port),
 		Handler: router.Handler(),
 	}
 
@@ -28,35 +29,29 @@ func NewHTTPServer() *HTTPServer {
 	}
 }
 
-func NewTestHTTPServer() *HTTPServer {
-	router := gin.Default()
-	server := &http.Server{
-		Addr:    ADDRESS,
-		Handler: router.Handler(),
-	}
-	s := &HTTPServer{
-		server: server,
-		router: router,
-	}
-
-	s.route()
-	return s
-}
-
 func (s *HTTPServer) route() {
-	s.router.POST("/ping", s.PingRequest())
+	api := s.router.Group("/api")
+	api.POST("/ping", s.PingRequest())
 }
 
-func (s *HTTPServer) Run() {
+func (s *HTTPServer) Run(ctx context.Context) error {
 	s.route()
-	go func() error {
-		return s.server.ListenAndServe()
-	}()
-	slog.Info("http server running...")
-}
+	g, ctx := errgroup.WithContext(ctx)
 
-func (s *HTTPServer) Stop(ctx context.Context) {
-	if err := s.server.Shutdown(ctx); err != nil {
-		slog.Error("server shutdown error", "error", err)
-	}
+	g.Go(func() error {
+		slog.Info(fmt.Sprintf("http server running on %v", s.server.Addr))
+		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	})
+
+	g.Go(func() error {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		return s.server.Shutdown(shutdownCtx)
+	})
+
+	return g.Wait()
 }

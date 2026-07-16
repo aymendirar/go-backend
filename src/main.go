@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/aymendirar/go-backend/src/http"
+	"github.com/aymendirar/go-backend/src/util"
 )
 
 func main() {
@@ -20,18 +20,19 @@ func main() {
 
 func _main() error {
 	slog.Info("backend starting up...")
-	http := http.NewHTTPServer()
-	http.Run()
+
+	env, err := util.LoadEnv()
+	if err != nil {
+		return err
+	}
 
 	shutdownCtx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	<-shutdownCtx.Done()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-	defer cancel()
-
-	http.Stop(ctx)
+	s := http.NewHTTPServer(env.HOST, env.PORT)
+	if err := s.Run(shutdownCtx); err != nil {
+		return err
+	}
 	slog.Info("exiting...")
 	return nil
 }
